@@ -11,6 +11,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module DataFrame.Internal.Expression where
 
@@ -29,17 +32,15 @@ import DataFrame.Internal.Types
 import Type.Reflection (TypeRep, Typeable, typeOf, typeRep, pattern App)
 
 data Expr a where
-    Col :: (Columnable a) => T.Text -> Expr a
-    Lit :: (Columnable a) => a -> Expr a
+    Col :: T.Text -> Expr a
+    Lit :: a -> Expr a
     If ::
-        (Columnable a) =>
         Expr Bool ->
         Expr a ->
         Expr a ->
         Expr a
     UnaryOp ::
-        ( Columnable a
-        , Columnable b
+        ( Columnable b
         ) =>
         T.Text -> -- Operation name
         (b -> a) ->
@@ -48,7 +49,6 @@ data Expr a where
     BinaryOp ::
         ( Columnable c
         , Columnable b
-        , Columnable a
         ) =>
         T.Text -> -- operation name
         (c -> b -> a) ->
@@ -58,7 +58,6 @@ data Expr a where
     AggVector ::
         ( VG.Vector v b
         , Typeable v
-        , Columnable a
         , Columnable b
         ) =>
         Expr b ->
@@ -66,17 +65,13 @@ data Expr a where
         (v b -> a) ->
         Expr a
     AggReduce ::
-        (Columnable a) =>
         Expr a ->
         T.Text -> -- Operation name
-        (forall a. (Columnable a) => a -> a -> a) ->
+        (forall b. (Columnable b) => b -> b -> b) ->
         Expr a
     AggNumericVector ::
-        ( Columnable a
-        , Columnable b
-        , VU.Unbox a
+        ( Columnable b
         , VU.Unbox b
-        , Num a
         , Num b
         ) =>
         Expr b ->
@@ -85,12 +80,14 @@ data Expr a where
         Expr a
     AggFold ::
         forall a b.
-        (Columnable a, Columnable b) =>
+        (Columnable b) =>
         Expr b ->
         T.Text -> -- Operation name
         a ->
         (a -> b -> a) ->
         Expr a
+
+deriving stock instance Functor Expr
 
 data UExpr where
     Wrap :: (Columnable a) => Expr a -> UExpr
@@ -962,8 +959,8 @@ instance (Floating a, Columnable a) => Floating (Expr a) where
     atanh :: (Floating a, Columnable a) => Expr a -> Expr a
     atanh = UnaryOp "atanh" atanh
 
-instance (Show a) => Show (Expr a) where
-    show :: forall a. (Show a) => Expr a -> String
+instance (Typeable a, Show a) => Show (Expr a) where
+    show :: forall a. (Typeable a, Show a) => Expr a -> String
     show (Col name) = "(col @" ++ show (typeRep @a) ++ " " ++ show name ++ ")"
     show (Lit value) = "(lit (" ++ show value ++ "))"
     show (If cond l r) = "(ifThenElse " ++ show cond ++ " " ++ show l ++ " " ++ show r ++ ")"
@@ -1009,10 +1006,10 @@ isCommutative name =
                ]
 
 -- Compare expressions for ordering (used in normalization)
-compareExpr :: Expr a -> Expr a -> Ordering
+compareExpr :: Show a => Expr a -> Expr a -> Ordering
 compareExpr e1 e2 = compare (exprKey e1) (exprKey e2)
   where
-    exprKey :: Expr a -> String
+    exprKey :: Show a => Expr a -> String
     exprKey (Col name) = "0:" ++ T.unpack name
     exprKey (Lit val) = "1:" ++ show val
     exprKey (If c t e) = "2:" ++ exprKey c ++ exprKey t ++ exprKey e

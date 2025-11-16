@@ -53,10 +53,10 @@ import Debug.Trace (trace, traceShow)
 import Language.Haskell.TH
 import qualified Language.Haskell.TH.Syntax as TH
 import Text.Regex.TDFA
-import Type.Reflection (typeRep)
+import Type.Reflection (typeRep, Typeable)
 import Prelude hiding (maximum, minimum, sum)
 
-name :: (Show a) => Expr a -> T.Text
+name :: (Show a, Typeable a) => Expr a -> T.Text
 name (Col n) = n
 name other =
     error $
@@ -161,7 +161,7 @@ minimum :: (Columnable a, Ord a) => Expr a -> Expr a
 minimum expr = AggReduce expr "minimum" Prelude.min
 
 maximum :: (Columnable a, Ord a) => Expr a -> Expr a
-maximum expr = AggReduce expr "maximum" Prelude.max
+maximum expr = AggReduce expr "maximum" $ Prelude.max
 
 sum :: forall a. (Columnable a, Num a, VU.Unbox a) => Expr a -> Expr a
 sum expr = AggNumericVector expr "sum" VG.sum
@@ -199,8 +199,8 @@ relu = UnaryOp "relu" (Prelude.max 0)
 min :: (Columnable a, Ord a) => Expr a -> Expr a -> Expr a
 min = BinaryOp "min" Prelude.min
 
-max :: (Columnable a, Ord a) => Expr a -> Expr a -> Expr a
-max = BinaryOp "max" Prelude.max
+max :: forall a. (Columnable a, Ord a) => Expr a -> Expr a -> Expr a
+max = BinaryOp "max" $ Prelude.max @a
 
 reduce ::
     forall a b.
